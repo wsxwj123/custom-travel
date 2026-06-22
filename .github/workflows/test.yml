@@ -126,6 +126,10 @@ jobs:
         run: cd client && npm run lint:pages
 
       - name: Run tests
+        env:
+          # Vitest + v8 coverage across 150+ files exceeds Node's default ~4 GB
+          # heap and OOM'd; give it headroom on the 16 GB runner.
+          NODE_OPTIONS: --max-old-space-size=6144
         run: cd client && npm run test:coverage
 
       - name: Upload coverage
