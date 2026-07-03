@@ -48,3 +48,6 @@ export * from './sanitize/sanitize';
 
 // i18n registry (language list + pure helpers — no locale data)
 export * from './i18n/languages';
+
+// Coordinate conversion for Chinese basemaps (WGS-84 ↔ GCJ-02 ↔ BD-09)
+export * from './coord/coord';
