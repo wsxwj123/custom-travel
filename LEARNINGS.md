@@ -24,3 +24,9 @@
 - Dockerfile 国内源参数化（npm registry、KDE CDN 的 kitinerary 可选化）
 - MapViewGL（Mapbox/MapLibre）不支持自定义 CRS，中国模式请用 Leaflet provider
 - 登录页 MuseoModerno 品牌字体已移除（回退 sans-serif），要恢复可加 @fontsource/museomoderno
+
+## 社媒导入功能（2026-07-03）
+- 管线：`socialImportService.ts`（抓取+编排）→ `llmService.ts`（OpenAI 兼容抽取，DeepSeek 默认）→ `mapsService.searchPlaces`（复用现有 provider 分支做坐标匹配）→ `placeService.insertImportedPlaces`（复用 google/naver 导入的 dedup 语义）。
+- 小红书走 xiaohongshu-mcp 的 **REST API**（`POST :18060/api/v1/feeds/detail`，feed_id+xsec_token 必填），不要碰它的 MCP 协议层（session/SSE 坑多且不稳定）。**已知抖动**：偶发 `not found in noteDetailMap` 错误，换一篇/重试即好；错误信息里引导用户粘贴文字兜底。
+- B站：view API 免登录免 wbi；字幕走旧版 `/x/player/v2`（要 SESSDATA）；音频转写走 `yt-dlp -x`（不要自己实现 wbi——逆向文档仓库 bilibili-API-collect 已于 2026-01 被 B站律师函关停，playurl 强制 wbi 且 2026 新增 412 指纹风控专打海外机房 IP）。
+- 端到端验证技巧：没有真实 LLM key 时，本地起 mock OpenAI 端点（固定返回 places JSON）+ 无 AMAP key 时自动落 Nominatim，可零成本全管线实测（实测橘子洲头坐标正确、dedup 和 unmatched 上报正常）。

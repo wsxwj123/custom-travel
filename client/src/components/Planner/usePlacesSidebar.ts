@@ -98,10 +98,11 @@ export function usePlacesSidebar(props: PlacesSidebarProps) {
 
   const [listImportOpen, setListImportOpen] = useState(false)
   const [listImportUrl, setListImportUrl] = useState('')
+  const [listImportText, setListImportText] = useState('')
   const [listImportLoading, setListImportLoading] = useState(false)
-  const [listImportProvider, setListImportProvider] = useState<'google' | 'naver'>('google')
+  const [listImportProvider, setListImportProvider] = useState<'google' | 'naver' | 'social'>('google')
   const [listImportEnrich, setListImportEnrich] = useState(false)
-  const availableListImportProviders: Array<'google' | 'naver'> = isNaverListImportEnabled ? ['google', 'naver'] : ['google']
+  const availableListImportProviders: Array<'google' | 'naver' | 'social'> = isNaverListImportEnabled ? ['google', 'naver', 'social'] : ['google', 'social']
   const hasMultipleListImportProviders = availableListImportProviders.length > 1
 
   useEffect(() => {
@@ -110,7 +111,43 @@ export function usePlacesSidebar(props: PlacesSidebarProps) {
     }
   }, [isNaverListImportEnabled, listImportProvider])
 
+  // 小红书/B站 link (or pasted note text) → server-side LLM extraction → places.
+  const handleSocialImport = async () => {
+    if (!listImportUrl.trim() && !listImportText.trim()) return
+    setListImportLoading(true)
+    try {
+      const result = await placesApi.importSocial(tripId, {
+        url: listImportUrl.trim() || undefined,
+        text: listImportText.trim() || undefined,
+      })
+      await loadTrip(tripId)
+      if (result.count === 0 && result.skipped > 0) {
+        toast.warning(t('places.importAllSkipped'))
+      } else {
+        toast.success(t('places.socialImported', { count: result.count, list: result.listName }))
+      }
+      if (result.unmatched?.length > 0) {
+        toast.warning(t('places.socialUnmatched', { names: result.unmatched.join('、') }))
+      }
+      setListImportOpen(false)
+      setListImportUrl('')
+      setListImportText('')
+      if (result.places?.length > 0) {
+        const importedIds: number[] = result.places.map((p: { id: number }) => p.id)
+        pushUndo?.(t('undo.importSocial'), async () => {
+          try { await placesApi.bulkDelete(tripId, importedIds) } catch {}
+          await loadTrip(tripId)
+        })
+      }
+    } catch (err: any) {
+      toast.error(err?.response?.data?.error || t('places.socialError'))
+    } finally {
+      setListImportLoading(false)
+    }
+  }
+
   const handleListImport = async () => {
+    if (listImportProvider === 'social') return handleSocialImport()
     if (!listImportUrl.trim()) return
     setListImportLoading(true)
     const provider = listImportProvider === 'naver' && isNaverListImportEnabled ? 'naver' : 'google'
@@ -253,6 +290,7 @@ export function usePlacesSidebar(props: PlacesSidebarProps) {
     sidebarDragOver, handleSidebarDragEnter, handleSidebarDragOver, handleSidebarDragLeave, handleSidebarDrop,
     scrollContainerRef, onScrollTopChange,
     listImportOpen, setListImportOpen, listImportUrl, setListImportUrl,
+    listImportText, setListImportText,
     listImportLoading, listImportProvider, setListImportProvider,
     listImportEnrich, setListImportEnrich, canEnrichImport,
     availableListImportProviders, hasMultipleListImportProviders, handleListImport,

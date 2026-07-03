@@ -7,7 +7,12 @@ export function ListImportModal(S: SidebarState) {
     setListImportOpen, setListImportUrl, t, hasMultipleListImportProviders, availableListImportProviders,
     listImportProvider, setListImportProvider, listImportUrl, listImportLoading, handleListImport,
     listImportEnrich, setListImportEnrich, canEnrichImport,
+    listImportText, setListImportText,
   } = S
+  const isSocial = listImportProvider === 'social'
+  const providerLabel = (p: string) =>
+    p === 'google' ? t('places.importGoogleList') : p === 'naver' ? t('places.importNaverList') : t('places.importSocialList')
+  const canSubmit = isSocial ? !!(listImportUrl.trim() || listImportText.trim()) : !!listImportUrl.trim()
   return ReactDOM.createPortal(
     <div
       onClick={() => { setListImportOpen(false); setListImportUrl('') }}
@@ -34,20 +39,20 @@ export function ListImportModal(S: SidebarState) {
                   fontSize: 11, fontWeight: 600, fontFamily: 'inherit',
                 }}
               >
-                {provider === 'google' ? t('places.importGoogleList') : t('places.importNaverList')}
+                {providerLabel(provider)}
               </button>
             ))}
           </div>
         )}
         <div className="text-content-faint" style={{ fontSize: 12, marginBottom: 16 }}>
-          {t(listImportProvider === 'google' ? 'places.googleListHint' : 'places.naverListHint')}
+          {t(listImportProvider === 'google' ? 'places.googleListHint' : listImportProvider === 'naver' ? 'places.naverListHint' : 'places.socialListHint')}
         </div>
         <input
           type="text"
           value={listImportUrl}
           onChange={e => setListImportUrl(e.target.value)}
           onKeyDown={e => { if (e.key === 'Enter' && !listImportLoading) handleListImport() }}
-          placeholder={listImportProvider === 'google' ? 'https://maps.app.goo.gl/...' : 'https://naver.me/...'}
+          placeholder={listImportProvider === 'google' ? 'https://maps.app.goo.gl/...' : listImportProvider === 'naver' ? 'https://naver.me/...' : 'http://xhslink.com/... / https://b23.tv/...'}
           autoFocus
           className="bg-surface-tertiary text-content"
           style={{
@@ -57,7 +62,22 @@ export function ListImportModal(S: SidebarState) {
             fontFamily: 'inherit', boxSizing: 'border-box',
           }}
         />
-        {canEnrichImport && (
+        {isSocial && (
+          <textarea
+            value={listImportText}
+            onChange={e => setListImportText(e.target.value)}
+            placeholder={t('places.socialTextPlaceholder')}
+            rows={5}
+            className="bg-surface-tertiary text-content"
+            style={{
+              width: '100%', padding: '10px 14px', borderRadius: 10, marginTop: 8,
+              border: '1px solid var(--border-primary)',
+              fontSize: 13, outline: 'none', resize: 'vertical',
+              fontFamily: 'inherit', boxSizing: 'border-box',
+            }}
+          />
+        )}
+        {canEnrichImport && !isSocial && (
           <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, marginTop: 12 }}>
             <div style={{ flex: 1, minWidth: 0 }}>
               <div className="text-content" style={{ fontSize: 12, fontWeight: 600 }}>{t('places.enrichOnImport')}</div>
@@ -80,11 +100,11 @@ export function ListImportModal(S: SidebarState) {
           </button>
           <button
             onClick={handleListImport}
-            disabled={!listImportUrl.trim() || listImportLoading}
-            className={!listImportUrl.trim() || listImportLoading ? 'bg-surface-tertiary text-content-faint' : 'bg-accent text-accent-text'}
+            disabled={!canSubmit || listImportLoading}
+            className={!canSubmit || listImportLoading ? 'bg-surface-tertiary text-content-faint' : 'bg-accent text-accent-text'}
             style={{
               padding: '8px 16px', borderRadius: 10, border: 'none',
-              fontSize: 13, fontWeight: 500, cursor: !listImportUrl.trim() || listImportLoading ? 'default' : 'pointer',
+              fontSize: 13, fontWeight: 500, cursor: !canSubmit || listImportLoading ? 'default' : 'pointer',
               fontFamily: 'inherit',
             }}
           >

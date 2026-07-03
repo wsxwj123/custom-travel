@@ -371,6 +371,8 @@ export const placesApi = {
       apiClient.post(`/trips/${tripId}/places/import/google-list`, { url, enrich } satisfies PlaceImportListRequest).then(r => r.data),
   importNaverList: (tripId: number | string, url: string, enrich?: boolean) =>
       apiClient.post(`/trips/${tripId}/places/import/naver-list`, { url, enrich } satisfies PlaceImportListRequest).then(r => r.data),
+  importSocial: (tripId: number | string, input: { url?: string; text?: string }) =>
+      apiClient.post(`/trips/${tripId}/places/import/social`, input).then(r => r.data),
   bulkDelete: (tripId: number | string, ids: number[]) =>
       apiClient.post(`/trips/${tripId}/places/bulk-delete`, { ids } satisfies PlaceBulkDeleteRequest).then(r => r.data),
 }

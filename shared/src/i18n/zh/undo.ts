@@ -15,6 +15,7 @@ const undo: TranslationStrings = {
   'undo.importKeyholeMarkup': 'KMZ/KML 导入',
   'undo.importGoogleList': 'Google 地图导入',
   'undo.importNaverList': 'Naver 地图导入',
+  'undo.importSocial': '社交链接导入',
   'undo.addPlace': '地点已添加',
   'undo.done': '已撤销：{action}',
   'undo.importBooking': '导入预订确认',

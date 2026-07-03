@@ -973,3 +973,41 @@ export async function searchPlaceImage(tripId: string, placeId: string, userId: 
 
   return { photos };
 }
+
+// ---------------------------------------------------------------------------
+// Social import (小红书/B站) — shared insert with the same dedup semantics as
+// the Google/Naver list imports above.
+// ---------------------------------------------------------------------------
+
+export interface ImportedPlaceInput {
+  name: string;
+  lat: number;
+  lng: number;
+  notes?: string | null;
+  address?: string | null;
+  osmId?: string | null;
+  googlePlaceId?: string | null;
+}
+
+export function insertImportedPlaces(tripId: string, inputs: ImportedPlaceInput[]) {
+  const dedup = buildDedupSet(tripId);
+  const insertStmt = db.prepare(`
+    INSERT INTO places (trip_id, name, lat, lng, notes, address, osm_id, google_place_id, transport_mode)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'walking')
+  `);
+  const created: any[] = [];
+  let skipped = 0;
+  const insertAll = db.transaction(() => {
+    for (const p of inputs) {
+      if (isPlaceDuplicate({ name: p.name, lat: p.lat, lng: p.lng }, dedup)) {
+        skipped++;
+        continue;
+      }
+      const result = insertStmt.run(tripId, p.name, p.lat, p.lng, p.notes || null, p.address || null, p.osmId || null, p.googlePlaceId || null);
+      created.push(getPlaceWithTags(Number(result.lastInsertRowid)));
+      trackInsertedInDedupSet({ name: p.name, lat: p.lat, lng: p.lng }, dedup);
+    }
+  });
+  insertAll();
+  return { places: created, skipped };
+}

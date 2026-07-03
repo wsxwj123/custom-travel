@@ -4,6 +4,7 @@ import { canAccessTrip } from '../../db/database';
 import { checkPermission } from '../../services/permissions';
 import type { User } from '../../types';
 import * as svc from '../../services/placeService';
+import { importSocial } from '../../services/socialImportService';
 import { onPlaceCreated, onPlaceUpdated, onPlaceDeleted } from '../../services/journeyService';
 
 type Trip = { user_id: number };
@@ -70,6 +71,10 @@ export class PlacesService {
 
   importNaverList(tripId: string, url: string, opts?: Parameters<typeof svc.importNaverList>[2]) {
     return svc.importNaverList(tripId, url, opts);
+  }
+
+  importSocial(tripId: string, userId: number, input: { url?: string; text?: string }, lang?: string) {
+    return importSocial(tripId, userId, input, lang);
   }
 
   searchImage(tripId: string, id: string, userId: number) {

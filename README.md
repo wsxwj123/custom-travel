@@ -15,6 +15,23 @@
 | 路线导出 | Google Maps 链接 | **高德地图** 链接（uri.amap.com） |
 | 前端 CDN | fonts.googleapis.com / unpkg | 本地自托管 |
 
+### 社媒链接导入（小红书 / B站）
+
+在行程的"列表导入"里选"小红书 / B站"，贴链接（或直接粘贴笔记文字）即可自动提取地点、匹配坐标、批量加入行程（可撤销）。内容获取的降级阶梯：
+
+- **小红书**：通过自托管 [xiaohongshu-mcp](https://github.com/xpzouying/xiaohongshu-mcp) 抓取笔记正文（配 `XHS_MCP_URL`，扫码登录一次）；抓取失败时直接粘贴笔记文字同样可用
+- **B站**：视频标题+简介免费拿；字幕需配 `BILIBILI_SESSDATA`；无字幕视频可走语音转写（需 `ASR_API_KEY`，推荐硅基流动 SenseVoice，另需本机有 `yt-dlp` + `ffmpeg`）
+- **地点提取**：OpenAI 兼容 LLM（配 `LLM_API_KEY`，推荐 DeepSeek），提取结果经地点搜索（高德/OSM）匹配坐标后入库，未匹配项会提示
+
+```bash
+-e LLM_API_KEY=sk-xxx                    # DeepSeek key（必需）
+-e XHS_MCP_URL=http://host:18060         # 小红书抓取（可选）
+-e BILIBILI_SESSDATA=xxx                 # B站字幕（可选）
+-e ASR_API_KEY=sk-xxx                    # 语音转写（可选，硅基流动）
+```
+
+注意：小红书/B站抓取均为非官方途径，接口可能变动；B站 2026 年起对海外数据中心 IP 有 412 风控，建议大陆网络环境部署。
+
 规划中（Phase 2/3）：12306 余票查询 MCP 工具、携程/去哪儿/滴滴/大众点评深链跳转、飞猪 flyai · 滴滴 · 高德官方 MCP 接入指引、Docker 构建国内源。
 
 ## 快速开始

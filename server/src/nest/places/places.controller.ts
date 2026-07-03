@@ -201,6 +201,41 @@ export class PlacesController {
     }
   }
 
+  // 小红书/B站 link (or pasted text) → LLM place extraction → geo-match → insert.
+  @Post('import/social')
+  async importSocial(
+    @CurrentUser() user: User,
+    @Param('tripId') tripId: string,
+    @Body('url') url: unknown,
+    @Body('text') text: unknown,
+    @Query('lang') lang?: string,
+    @Headers('x-socket-id') socketId?: string,
+  ) {
+    const trip = this.requireTrip(tripId, user);
+    this.requireEdit(trip, user);
+    if ((typeof url !== 'string' || !url.trim()) && (typeof text !== 'string' || !text.trim())) {
+      throw new HttpException({ error: 'url or text is required' }, 400);
+    }
+    try {
+      const result = await this.places.importSocial(
+        tripId,
+        user.id,
+        { url: typeof url === 'string' ? url.trim() : undefined, text: typeof text === 'string' ? text.trim() : undefined },
+        lang,
+      );
+      for (const place of result.places) {
+        this.places.broadcast(tripId, 'place:created', { place }, socketId);
+      }
+      return { ...result, count: result.places.length };
+    } catch (err: unknown) {
+      if (err instanceof HttpException) throw err;
+      const status = (err as { status?: number }).status || 400;
+      const message = err instanceof Error ? err.message : 'Failed to import from social link';
+      console.error('[Places] Social import error:', message);
+      throw new HttpException({ error: message }, status);
+    }
+  }
+
   @Post('bulk-delete')
   @HttpCode(200) // Express answers bulk-delete with res.json (200), unlike the 201 imports.
   bulkDelete(
