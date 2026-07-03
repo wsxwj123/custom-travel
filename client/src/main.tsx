@@ -13,6 +13,9 @@ import '@fontsource/poppins/700.css'
 import '@fontsource/geist-sans/400.css'
 import '@fontsource/geist-sans/500.css'
 import '@fontsource/geist-sans/600.css'
+// Leaflet CSS bundled same-origin (was a unpkg.com <link>, unreachable from
+// mainland China).
+import 'leaflet/dist/leaflet.css'
 import './index.css'
 import { startConnectivityProbe } from './sync/connectivity'
 import { requestPersistentStorage } from './sync/persistentStorage'

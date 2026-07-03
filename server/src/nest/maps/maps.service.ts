@@ -19,6 +19,7 @@ import {
   searchOverpassPois,
 } from '../../services/mapsService';
 import { serveFilePath } from '../../services/placePhotoCache';
+import { amapRoute, getAmapKey, type AmapRouteResult } from '../../services/amapService';
 
 type LocationBias = { low: { lat: number; lng: number }; high: { lat: number; lng: number } };
 
@@ -91,5 +92,14 @@ export class MapsService {
   // OSM-only POI search by category within a viewport bbox (never calls Google).
   pois(category: string, bbox: { south: number; west: number; north: number; east: number }) {
     return searchOverpassPois(category, bbox);
+  }
+
+  // Amap route proxy (China mode) — keeps the Web-service key server-side.
+  routeAvailable(): boolean {
+    return !!getAmapKey();
+  }
+
+  route(waypoints: { lat: number; lng: number }[], profile: 'driving' | 'walking' | 'cycling'): Promise<AmapRouteResult> {
+    return amapRoute(waypoints, profile);
   }
 }

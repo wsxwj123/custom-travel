@@ -148,6 +148,95 @@ export async function getAmapPlaceDetails(amapId: string): Promise<Record<string
   };
 }
 
+// ── Route planning (v3 direction) ────────────────────────────────────────────
+// One Amap call per consecutive waypoint pair (walking/bicycling don't support
+// vias), sequential to respect personal-tier QPS. Output mirrors what the
+// client builds from OSRM: WGS-84 [lat,lng] geometry + per-leg distance/duration.
+
+export interface AmapRouteResult {
+  coordinates: [number, number][];
+  distance: number;
+  duration: number;
+  legs: { distance: number; duration: number }[];
+}
+
+interface AmapPath {
+  distance?: string | number;
+  duration?: string | number;
+  cost?: { duration?: string | number };
+  steps?: { polyline?: string }[];
+}
+
+function parsePolyline(steps: { polyline?: string }[] | undefined): [number, number][] {
+  const out: [number, number][] = [];
+  for (const step of steps || []) {
+    for (const pair of (step.polyline || '').split(';')) {
+      const [lngStr, latStr] = pair.split(',');
+      const lng = parseFloat(lngStr);
+      const lat = parseFloat(latStr);
+      if (!isFinite(lat) || !isFinite(lng)) continue;
+      const w = gcj02ToWgs84(lat, lng);
+      out.push([w.lat, w.lng]);
+    }
+  }
+  return out;
+}
+
+async function amapDirectionLeg(
+  from: { lat: number; lng: number },
+  to: { lat: number; lng: number },
+  profile: 'driving' | 'walking' | 'cycling',
+): Promise<{ coordinates: [number, number][]; distance: number; duration: number }> {
+  const a = wgs84ToGcj02(from.lat, from.lng);
+  const b = wgs84ToGcj02(to.lat, to.lng);
+  const origin = `${a.lng.toFixed(6)},${a.lat.toFixed(6)}`;
+  const destination = `${b.lng.toFixed(6)},${b.lat.toFixed(6)}`;
+
+  if (profile === 'cycling') {
+    // Bicycling lives on the v4 API with a different envelope (errcode/data).
+    const key = getAmapKey();
+    const res = await fetch(`${AMAP_BASE}/v4/direction/bicycling?origin=${origin}&destination=${destination}&key=${key}`);
+    const data = await res.json() as { errcode?: number; data?: { paths?: AmapPath[] } };
+    const path = data.data?.paths?.[0];
+    if (!res.ok || data.errcode !== 0 || !path) {
+      throw Object.assign(new Error('Amap bicycling route failed'), { status: 502 });
+    }
+    return {
+      coordinates: parsePolyline(path.steps),
+      distance: Number(path.distance) || 0,
+      duration: Number(path.duration) || 0,
+    };
+  }
+
+  const path = profile === 'walking' ? '/v3/direction/walking' : '/v3/direction/driving';
+  const data = await amapFetch(path, { origin, destination });
+  const route = (data.route as { paths?: AmapPath[] } | undefined)?.paths?.[0];
+  if (!route) throw Object.assign(new Error('Amap route not found'), { status: 404 });
+  return {
+    coordinates: parsePolyline(route.steps),
+    distance: Number(route.distance) || 0,
+    duration: Number(route.duration ?? route.cost?.duration) || 0,
+  };
+}
+
+export async function amapRoute(
+  waypoints: { lat: number; lng: number }[],
+  profile: 'driving' | 'walking' | 'cycling',
+): Promise<AmapRouteResult> {
+  const coordinates: [number, number][] = [];
+  const legs: { distance: number; duration: number }[] = [];
+  let distance = 0;
+  let duration = 0;
+  for (let i = 0; i < waypoints.length - 1; i++) {
+    const leg = await amapDirectionLeg(waypoints[i], waypoints[i + 1], profile);
+    coordinates.push(...leg.coordinates);
+    legs.push({ distance: leg.distance, duration: leg.duration });
+    distance += leg.distance;
+    duration += leg.duration;
+  }
+  return { coordinates, distance, duration, legs };
+}
+
 // ── Reverse geocoding (v3 geocode/regeo) ─────────────────────────────────────
 
 export async function reverseGeocodeAmap(

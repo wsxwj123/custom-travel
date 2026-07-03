@@ -207,6 +207,30 @@ export class MapsController {
     }
   }
 
+  // Amap route proxy (China mode). 501 when AMAP_API_KEY isn't configured so
+  // the client can fall back to OSRM.
+  @Post('route')
+  @HttpCode(200)
+  async route(
+    @Body('waypoints') waypoints: unknown,
+    @Body('profile') profile: unknown,
+  ) {
+    if (!this.maps.routeAvailable()) {
+      throw new HttpException({ error: 'Amap routing not configured' }, 501);
+    }
+    const pts = Array.isArray(waypoints) ? waypoints as { lat: number; lng: number }[] : [];
+    if (pts.length < 2 || pts.length > 30 || pts.some(p => !Number.isFinite(p?.lat) || !Number.isFinite(p?.lng))) {
+      throw new HttpException({ error: 'waypoints must be 2-30 {lat,lng} points' }, 400);
+    }
+    const prof = profile === 'walking' || profile === 'cycling' ? profile : 'driving';
+    try {
+      return await this.maps.route(pts, prof);
+    } catch (err: unknown) {
+      console.error('Maps route error:', err);
+      throw toHttpException(err, 'Route error', 500);
+    }
+  }
+
   @Post('resolve-url')
   @HttpCode(200)
   async resolveUrl(@Body('url') url: unknown): Promise<MapsResolveUrlResult> {

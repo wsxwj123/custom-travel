@@ -1,6 +1,37 @@
 import { useSettingsStore } from '../../store/settingsStore'
 import type { DistanceUnit, RouteResult, RouteSegment, RouteWithLegs, Waypoint, RouteAnchors } from '../../types'
 import { formatDistance } from '../../utils/units'
+import { generateAmapUrl, isChinaMapMode } from './chinaCrs'
+
+// Server-side Amap route proxy (China mode). Returns null when the server has
+// no AMAP_API_KEY (501) so callers fall back to OSRM; the flag is remembered
+// to avoid re-probing on every route.
+let amapRouteUnavailable = false
+interface ProxyRouteResult {
+  coordinates: [number, number][]
+  distance: number
+  duration: number
+  legs: { distance: number; duration: number }[]
+}
+async function fetchAmapRoute(
+  waypoints: Waypoint[],
+  profile: 'driving' | 'walking' | 'cycling',
+  signal?: AbortSignal,
+): Promise<ProxyRouteResult | null> {
+  if (amapRouteUnavailable) return null
+  const response = await fetch('/api/maps/route', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ waypoints: waypoints.map(p => ({ lat: p.lat, lng: p.lng })), profile }),
+    signal,
+  })
+  if (response.status === 501) {
+    amapRouteUnavailable = true
+    return null
+  }
+  if (!response.ok) throw new Error('Route could not be calculated')
+  return await response.json()
+}
 
 const OSRM_BASE = 'https://router.project-osrm.org/route/v1'
 
@@ -28,35 +59,47 @@ export async function calculateRoute(
     throw new Error('At least 2 waypoints required')
   }
 
-  const coords = waypoints.map((p) => `${p.lng},${p.lat}`).join(';')
-  const url = `${OSRM_BASE}/${profile}/${coords}?overview=full&geometries=geojson&steps=false`
+  let coordinates: [number, number][]
+  let distance: number
+  let routeDuration: number
 
-  const response = await fetch(url, { signal })
-  if (!response.ok) {
-    throw new Error('Route could not be calculated')
+  const amapResult = isChinaMapMode() ? await fetchAmapRoute(waypoints, profile, signal) : null
+  if (amapResult) {
+    coordinates = amapResult.coordinates
+    distance = amapResult.distance
+    routeDuration = amapResult.duration
+  } else {
+    const coords = waypoints.map((p) => `${p.lng},${p.lat}`).join(';')
+    const url = `${OSRM_BASE}/${profile}/${coords}?overview=full&geometries=geojson&steps=false`
+
+    const response = await fetch(url, { signal })
+    if (!response.ok) {
+      throw new Error('Route could not be calculated')
+    }
+
+    const data = await response.json()
+
+    if (data.code !== 'Ok' || !data.routes || data.routes.length === 0) {
+      throw new Error('No route found')
+    }
+
+    const route = data.routes[0]
+    coordinates = route.geometry.coordinates.map(([lng, lat]: [number, number]) => [lat, lng])
+    distance = route.distance
+    routeDuration = route.duration
   }
 
-  const data = await response.json()
-
-  if (data.code !== 'Ok' || !data.routes || data.routes.length === 0) {
-    throw new Error('No route found')
-  }
-
-  const route = data.routes[0]
-  const coordinates: [number, number][] = route.geometry.coordinates.map(([lng, lat]: [number, number]) => [lat, lng])
-
-  const distance: number = route.distance
   let duration: number
   if (profile === 'walking') {
     duration = distance / (5000 / 3600)
   } else if (profile === 'cycling') {
     duration = distance / (15000 / 3600)
   } else {
-    duration = route.duration
+    duration = routeDuration
   }
 
   const walkingDuration = distance / (5000 / 3600)
-  const drivingDuration: number = route.duration
+  const drivingDuration: number = routeDuration
 
   return {
     coordinates,
@@ -93,6 +136,7 @@ export function withHotelBookends(
 export function generateGoogleMapsUrl(places: Waypoint[]): string | null {
   const valid = places.filter((p) => p.lat && p.lng)
   if (valid.length === 0) return null
+  if (isChinaMapMode()) return generateAmapUrl(valid)
   if (valid.length === 1) {
     return `https://www.google.com/maps/search/?api=1&query=${valid[0].lat},${valid[0].lng}`
   }
@@ -199,16 +243,22 @@ export async function calculateSegments(
 ): Promise<RouteSegment[]> {
   if (!waypoints || waypoints.length < 2) return []
 
-  const coords = waypoints.map((p) => `${p.lng},${p.lat}`).join(';')
-  const url = `${OSRM_BASE}/driving/${coords}?overview=false&geometries=geojson&steps=false&annotations=distance,duration`
+  let legs: { distance: number; duration: number }[]
+  const amapResult = isChinaMapMode() ? await fetchAmapRoute(waypoints, 'driving', signal) : null
+  if (amapResult) {
+    legs = amapResult.legs
+  } else {
+    const coords = waypoints.map((p) => `${p.lng},${p.lat}`).join(';')
+    const url = `${OSRM_BASE}/driving/${coords}?overview=false&geometries=geojson&steps=false&annotations=distance,duration`
 
-  const response = await fetch(url, { signal })
-  if (!response.ok) throw new Error('Route could not be calculated')
+    const response = await fetch(url, { signal })
+    if (!response.ok) throw new Error('Route could not be calculated')
 
-  const data = await response.json()
-  if (data.code !== 'Ok' || !data.routes?.[0]) throw new Error('No route found')
+    const data = await response.json()
+    if (data.code !== 'Ok' || !data.routes?.[0]) throw new Error('No route found')
 
-  const legs = data.routes[0].legs
+    legs = data.routes[0].legs
+  }
   return legs.map((leg: { distance: number; duration: number }, i: number): RouteSegment => {
     const from: [number, number] = [waypoints[i].lat, waypoints[i].lng]
     const to: [number, number] = [waypoints[i + 1].lat, waypoints[i + 1].lng]
@@ -246,18 +296,35 @@ export async function calculateRouteWithLegs(
   const cached = routeCache.get(cacheKey)
   if (cached) return cached
 
-  const url = `${OSRM_PROFILE_BASE[profile]}/${coords}?overview=full&geometries=geojson&annotations=distance,duration`
-  const response = await fetch(url, { signal })
-  if (!response.ok) throw new Error('Route could not be calculated')
+  let coordinates: [number, number][]
+  let rawLegs: { distance: number; duration: number }[]
+  let totalDistance: number
+  let totalDuration: number
 
-  const data = await response.json()
-  if (data.code !== 'Ok' || !data.routes?.[0]) throw new Error('No route found')
+  const amapResult = isChinaMapMode() ? await fetchAmapRoute(waypoints, profile, signal) : null
+  if (amapResult) {
+    coordinates = amapResult.coordinates
+    rawLegs = amapResult.legs
+    totalDistance = amapResult.distance
+    totalDuration = amapResult.duration
+  } else {
+    const url = `${OSRM_PROFILE_BASE[profile]}/${coords}?overview=full&geometries=geojson&annotations=distance,duration`
+    const response = await fetch(url, { signal })
+    if (!response.ok) throw new Error('Route could not be calculated')
 
-  const route = data.routes[0]
-  const coordinates: [number, number][] = route.geometry.coordinates.map(
-    ([lng, lat]: [number, number]) => [lat, lng]
-  )
-  const legs: RouteSegment[] = (route.legs || []).map(
+    const data = await response.json()
+    if (data.code !== 'Ok' || !data.routes?.[0]) throw new Error('No route found')
+
+    const route = data.routes[0]
+    coordinates = route.geometry.coordinates.map(
+      ([lng, lat]: [number, number]) => [lat, lng]
+    )
+    rawLegs = route.legs || []
+    totalDistance = route.distance
+    totalDuration = route.duration
+  }
+
+  const legs: RouteSegment[] = rawLegs.map(
     (leg: { distance: number; duration: number }, i: number): RouteSegment => {
       const from: [number, number] = [waypoints[i].lat, waypoints[i].lng]
       const to: [number, number] = [waypoints[i + 1].lat, waypoints[i + 1].lng]
@@ -275,7 +342,7 @@ export async function calculateRouteWithLegs(
     }
   )
 
-  const result: RouteWithLegs = { coordinates, distance: route.distance, duration: route.duration, legs }
+  const result: RouteWithLegs = { coordinates, distance: totalDistance, duration: totalDuration, legs }
   routeCache.set(cacheKey, result)
   if (routeCache.size > ROUTE_CACHE_MAX) {
     const oldest = routeCache.keys().next().value

@@ -1,5 +1,6 @@
 import L from 'leaflet'
 import { gcj02ToWgs84, wgs84ToGcj02 } from '@trek/shared'
+import { useSettingsStore } from '../../store/settingsStore'
 
 /**
  * Leaflet CRS for GCJ-02 basemaps (Amap/高德). Composes the WGS-84 → GCJ-02
@@ -37,6 +38,32 @@ export function crsForTileUrl(url: string | undefined): L.CRS {
 /** Amap tile hosts shard on webrd01–04 / webst01–04 instead of Leaflet's a-c. */
 export function subdomainsForTileUrl(url: string | undefined): string | string[] {
   return isGcj02TileUrl(url) ? ['1', '2', '3', '4'] : 'abc'
+}
+
+/**
+ * "China map mode" — the user picked an Amap basemap. Drives route planning
+ * (server-side Amap proxy instead of OSRM) and export links (uri.amap.com
+ * instead of Google Maps), both unreachable/misaligned services in China.
+ */
+export function isChinaMapMode(): boolean {
+  return isGcj02TileUrl(useSettingsStore.getState().settings.map_tile_url)
+}
+
+/** Amap deep link for one place (marker) or a first→last navigation. GCJ-02. */
+export function generateAmapUrl(places: { lat: number; lng: number; name?: string }[]): string | null {
+  const valid = places.filter(p => p.lat && p.lng)
+  if (valid.length === 0) return null
+  const g = (p: { lat: number; lng: number }) => {
+    const c = wgs84ToGcj02(p.lat, p.lng)
+    return `${c.lng.toFixed(6)},${c.lat.toFixed(6)}`
+  }
+  if (valid.length === 1) {
+    return `https://uri.amap.com/marker?position=${g(valid[0])}&name=${encodeURIComponent(valid[0].name || '')}`
+  }
+  // uri.amap.com navigation has no multi-via support — link first → last.
+  const from = valid[0]
+  const to = valid[valid.length - 1]
+  return `https://uri.amap.com/navigation?from=${g(from)},${encodeURIComponent(from.name || 'start')}&to=${g(to)},${encodeURIComponent(to.name || 'end')}&mode=car`
 }
 
 export const AMAP_TILE_PRESETS = [
