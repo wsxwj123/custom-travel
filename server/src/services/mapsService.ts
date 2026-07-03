@@ -1,4 +1,5 @@
 import { db } from '../db/database';
+import * as amap from './amapService';
 import { decrypt_api_key } from './apiKeyCrypto';
 import { safeFetchFollow, SsrfBlockedError } from '../utils/ssrfGuard';
 import { getAppUrl } from './notifications';
@@ -608,6 +609,12 @@ export async function fetchWikimediaPhoto(lat: number, lng: number, name?: strin
 // ── Search places (Google or Nominatim fallback) ─────────────────────────────
 
 export async function searchPlaces(userId: number, query: string, lang?: string, locationBias?: { lat: number; lng: number; radius?: number }): Promise<{ places: Record<string, unknown>[]; source: string }> {
+  // AMAP_API_KEY switches the whole instance to Amap (China mode).
+  if (amap.getAmapKey()) {
+    const places = await amap.searchAmapPlaces(query, locationBias);
+    return { places, source: 'amap' };
+  }
+
   const apiKey = getMapsKey(userId);
 
   if (!apiKey) {
@@ -670,6 +677,10 @@ export async function autocompletePlaces(
   lang?: string,
   locationBias?: { low: { lat: number; lng: number }; high: { lat: number; lng: number } },
 ): Promise<{ suggestions: { placeId: string; mainText: string; secondaryText: string }[]; source: string }> {
+  if (amap.getAmapKey()) {
+    return amap.autocompleteAmap(input, locationBias);
+  }
+
   const apiKey = getMapsKey(userId);
 
   if (!apiKey) {
@@ -745,6 +756,11 @@ async function autocompleteNominatim(
 // ── Place details (Google or OSM) ────────────────────────────────────────────
 
 export async function getPlaceDetails(userId: number, placeId: string, lang?: string): Promise<{ place: Record<string, unknown> }> {
+  // Amap details: placeId is "amap:B000A83M61" — must win over the OSM colon check.
+  if (placeId.startsWith('amap:')) {
+    return { place: await amap.getAmapPlaceDetails(placeId.slice(5)) };
+  }
+
   // OSM details: placeId is "node:123456" or "way:123456" etc.
   if (placeId.includes(':')) {
     const [osmType, osmId] = placeId.split(':');
@@ -830,6 +846,11 @@ export async function getPlaceDetails(userId: number, placeId: string, lang?: st
 }
 
 export async function getPlaceDetailsExpanded(userId: number, placeId: string, lang?: string, refresh = false): Promise<{ place: Record<string, unknown> }> {
+  // Amap has no expanded tier (no reviews/editorial) — serve the base details.
+  if (placeId.startsWith('amap:')) {
+    return { place: await amap.getAmapPlaceDetails(placeId.slice(5)) };
+  }
+
   const langKey = toApiLang(lang, 'de');
   const apiKey = getMapsKey(userId);
   if (!apiKey) throw Object.assign(new Error('Google Maps API key not configured'), { status: 400 });
@@ -1029,6 +1050,14 @@ export async function getPlacePhoto(
 // ── Reverse geocoding ────────────────────────────────────────────────────────
 
 export async function reverseGeocode(lat: string, lng: string, lang?: string): Promise<{ name: string | null; address: string | null }> {
+  if (amap.getAmapKey()) {
+    try {
+      return await amap.reverseGeocodeAmap(parseFloat(lat), parseFloat(lng));
+    } catch (err) {
+      console.error('Amap reverse geocode failed, falling back to Nominatim:', err);
+    }
+  }
+
   const params = new URLSearchParams({
     lat, lon: lng, format: 'json', addressdetails: '1', zoom: '18',
     'accept-language': toApiLang(lang),
