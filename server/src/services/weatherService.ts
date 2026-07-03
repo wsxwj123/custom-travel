@@ -1,3 +1,4 @@
+import * as qweather from './qweatherService';
 
 // ── Interfaces ──────────────────────────────────────────────────────────
 
@@ -154,6 +155,20 @@ async function _getWeatherImpl(
   lang: string,
 ): Promise<WeatherResult> {
   const ck = cacheKey(lat, lng, date);
+
+  // QWEATHER_API_KEY switches to 和风天气 (China mode); out-of-range dates and
+  // API failures fall through to the Open-Meteo paths below.
+  if (qweather.getQWeatherKey()) {
+    try {
+      const result = await qweather.qweatherGetWeather(lat, lng, date, lang);
+      if (result) {
+        setCache(ck, result, date ? TTL_FORECAST_MS : TTL_CURRENT_MS);
+        return result;
+      }
+    } catch (err) {
+      console.error('QWeather failed, falling back to Open-Meteo:', err);
+    }
+  }
 
   if (date) {
     const cached = getCached(ck);
@@ -343,6 +358,18 @@ async function _getDetailedWeatherImpl(
 
   const cached = getCached(ck);
   if (cached) return cached;
+
+  if (qweather.getQWeatherKey()) {
+    try {
+      const result = await qweather.qweatherGetDetailedWeather(lat, lng, date, lang);
+      if (result) {
+        setCache(ck, result, TTL_FORECAST_MS);
+        return result;
+      }
+    } catch (err) {
+      console.error('QWeather detailed failed, falling back to Open-Meteo:', err);
+    }
+  }
 
   const targetDate = new Date(date);
   const now = new Date();
