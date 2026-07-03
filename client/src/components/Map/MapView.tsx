@@ -11,6 +11,7 @@ import { getCategoryIcon, CATEGORY_ICON_MAP } from '../shared/categoryIcons'
 import ReservationOverlay from './ReservationOverlay'
 import type { Reservation } from '../../types'
 import { POI_CATEGORY_BY_KEY, type Poi } from './poiCategories'
+import { crsForTileUrl, subdomainsForTileUrl } from './chinaCrs'
 
 function categoryIconSvg(iconName: string | null | undefined, size: number): string {
   const IconComponent = (iconName && CATEGORY_ICON_MAP[iconName]) || CATEGORY_ICON_MAP['MapPin']
@@ -576,6 +577,10 @@ export const MapView = memo(function MapView({
     <div className="w-full h-full relative">
     <MapContainer
       id="trek-map"
+      // crs is immutable after mount — remount when the tile source switches
+      // between WGS-84 and GCJ-02 (Amap) coordinate systems.
+      key={crsForTileUrl(tileUrl).code}
+      crs={crsForTileUrl(tileUrl)}
       center={center}
       zoom={zoom}
       zoomControl={false}
@@ -583,6 +588,7 @@ export const MapView = memo(function MapView({
     >
       <TileLayer
         url={tileUrl}
+        subdomains={subdomainsForTileUrl(tileUrl)}
         attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
         maxZoom={19}
         keepBuffer={8}

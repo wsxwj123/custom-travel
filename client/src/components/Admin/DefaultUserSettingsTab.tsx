@@ -17,8 +17,10 @@ import {
   styleSettingKey,
   type GlMapProvider,
 } from '../Map/glProviders'
+import { AMAP_TILE_PRESETS } from '../Map/chinaCrs'
 
 const MAP_PRESETS = [
+  ...AMAP_TILE_PRESETS,
   { name: 'OpenStreetMap', url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png' },
   { name: 'OpenStreetMap DE', url: 'https://tile.openstreetmap.de/{z}/{x}/{y}.png' },
   { name: 'CartoDB Light', url: 'https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png' },
